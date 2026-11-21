@@ -251,3 +251,143 @@ def importar_archivos():
         print("\nError: el archivo JSON esta mal estructurado y no se puede leer")
     except Exception as error:
         print(f"\nerror al importar: {error}")
+
+MONGO_URI = "mongodb+srv://hanscardeno_db_user:DPeZeWIhWUlEztNb@firstdatabase-inf1-hans.jmn0wo8.mongodb.net/"
+NOMBRE_BD = "monitoreo_biomedico"
+NOMBRE_COLECCION = "registros_pacientes"
+
+def conectar_mongodb():
+    if "<usuario>" in MONGO_URI or "<password>" in MONGO_URI:
+        print("\n[Aviso] Debes pegar tu enlace real de MongoDB Atlas en la variable MONGO_URI.")
+        return None
+
+    try:
+        cliente = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        cliente.admin.command("ping")
+        bd = cliente[NOMBRE_BD]
+        return bd[NOMBRE_COLECCION]
+    except ConnectionFailure as error:
+        registrar_log(f"Error de conexion con MongoDB Atlas: {error}")
+        print(f"\nError: No se pudo conectar con MongoDB Atlas. Verifique su internet o URI.\nDetalle: {error}")
+        return None
+    except Exception as error:
+        registrar_log(f"Error inesperado al conectar a MongoDB: {error}")
+        print(f"\nError inesperado con MongoDB: {error}")
+        return None
+
+def guardar_en_mongodb():
+    if not REGISTROS_BIOMEDICOS:
+        print("\nNo hay registros en memoria para subir. Genere o importe datos primero.")
+        return
+
+    coleccion = conectar_mongodb()
+    if coleccion is None:
+        return
+
+    try:
+        documentos_limpios = []
+        for reg in REGISTROS_BIOMEDICOS:
+            if validar_patron_registro(reg):
+                documentos_limpios.append({
+                    "id": reg["id"],
+                    "fr": reg["fr"],
+                    "fc": reg["fc"],
+                    "spo2": reg["spo2"]
+                })
+
+        if documentos_limpios:
+            coleccion.delete_many({})
+            resultado = coleccion.insert_many(documentos_limpios)
+            cantidad = len(resultado.inserted_ids)
+            registrar_log(f"MongoDB (CREATE): {cantidad} registros insertados en la nube.")
+            print(f"\n-> Se guardaron {cantidad} registros en MongoDB Atlas exitosamente.")
+    except Exception as error:
+        registrar_log(f"Error al insertar en MongoDB: {error}")
+        print(f"\nError al subir los datos a MongoDB: {error}")
+
+def consultar_por_id_mongodb():
+    coleccion = conectar_mongodb()
+    if coleccion is None:
+        return
+
+    try:
+        todos = list(coleccion.find({}, {"_id": 0}))
+        
+        if not todos:
+            print("\nLa coleccion en MongoDB Atlas esta vacia.")
+            return
+
+        suma_fc = 0
+        bajo_spo2 = []
+        
+        for doc in todos:
+            fc_num = int(doc.get("fc", "0").replace("ppm", ""))
+            spo2_num = int(doc.get("spo2", "100").replace("%", ""))
+            
+            suma_fc += fc_num
+            if spo2_num < 94:
+                bajo_spo2.append(doc)
+
+        prom_val = suma_fc / len(todos) if todos else 0
+
+        with open('resultados_mongo.json', 'w', encoding="utf-8") as f:
+            json.dump({"promedio_fc": prom_val, "spo2_menor_94": bajo_spo2}, f, indent=4)
+        
+        print(f"\n-> Requisitos de rubrica ejecutados:")
+        print(f"   - Promedio FC calculado: {prom_val:.2f}ppm.")
+        print(f"   - Hay {len(bajo_spo2)} pacientes con SpO2 menor a 94%.")
+        print("   - Resultados exportados a 'resultados_mongo.json'.")
+        registrar_log("Consultas analiticas de MongoDB exportadas a JSON.")
+
+        id_buscar = input("\nIngrese el ID del paciente a consultar (ej. ID-001): ").strip()
+        paciente = coleccion.find_one({"id": id_buscar}, {"_id": 0})
+        
+        if paciente:
+            print(f"\nPaciente Encontrado en MongoDB: {paciente}")
+            registrar_log(f"Consulta en Mongo por ID: {id_buscar}")
+        else:
+            print(f"\nNo se encontro el paciente con ID {id_buscar} en la base de datos.")
+
+    except Exception as error:
+        registrar_log(f"Error al consultar MongoDB: {error}")
+        print(f"\nError al consultar datos de MongoDB: {error}")
+
+def menu_principal():
+    preparar_carpetas()
+    registrar_log("Inicio de sesion en el sistema de monitoreo biomedico.")
+
+    while True:
+        print("SISTEMA DE MONITOREO BIOMEDICO - TALLER 3".center(60))
+        print("1- Generar 50 registros aleatorios")
+        print("2- Ingresar datos (registro manual)")
+        print("3- Validar datos")
+        print("4- Exportar archivos (.txt, .csv, .json)")
+        print("5- Importar archivos (.txt, .csv, .json)")
+        print("6- Subir registros a MongoDB Atlas")
+        print("7- Consultar en MongoDB (a traves del ID)")
+        print("8- Salir del sistema")
+        opcion = input("Seleccione una opcion (1-8): ").strip()
+
+        if opcion == "1":
+            generar_registros_aleatorios()
+        elif opcion == "2":
+            ingresar_registro_manual()
+        elif opcion == "3":
+            validar_todos_los_registros()
+        elif opcion == "4":
+            exportar_archivos()
+        elif opcion == "5":
+            importar_archivos()
+        elif opcion == "6":
+            guardar_en_mongodb()
+        elif opcion == "7":
+            consultar_por_id_mongodb()
+        elif opcion == "8":
+            registrar_log("cierre del sistema")
+            print("\nsaliendo del sistema. Todos los eventos quedaron registrados en log.txt.")
+            break
+        else:
+            print("\nopcion invalida. Por favor ingrese un numero entre 1 y 8.")
+
+if __name__ == "__main__":
+    menu_principal()
