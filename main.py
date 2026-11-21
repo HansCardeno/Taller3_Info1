@@ -137,3 +137,117 @@ def validar_todos_los_registros():
 
     registrar_log(f"validacion ejecutada: {validos} validos, {invalidos} invalidos")
     print(f"\nresultado de validacion: {validos} registros validos | {invalidos} registros invalidos")
+
+def exportar_archivos():
+    if not REGISTROS_BIOMEDICOS:
+        print("\nno hay registros guardados para exportar, genere o ingrese datos primero")
+        return
+    preparar_carpetas()
+
+    try:
+        ruta_txt = Path("data/txt/registros_biomedicos.txt")
+        with open(ruta_txt, "w", encoding="utf-8") as f_txt:
+            for reg in REGISTROS_BIOMEDICOS:
+                linea = f"{reg['id']} | {reg['fr']} | {reg['fc']} | {reg['spo2']}\n"
+                f_txt.write(linea)
+
+        ruta_csv = Path("data/csv/registros_biomedicos.csv")
+        with open(ruta_csv, "w", newline="", encoding="utf-8") as f_csv:
+            campos = ["id", "fr", "fc", "spo2"]
+            escritor = csv.DictWriter(f_csv, fieldnames=campos)
+            escritor.writeheader()
+            for reg in REGISTROS_BIOMEDICOS:
+                escritor.writerow(reg)
+
+        ruta_json = Path("data/json/registros_biomedicos.json")
+        with open(ruta_json, "w", encoding="utf-8") as f_json:
+            json.dump(REGISTROS_BIOMEDICOS, f_json, indent=4, ensure_ascii=False)
+
+        registrar_log("Archivos .txt, .csv y .json exportados correctamente en /data.")
+        print("\narchivos exportados correctamente en:")
+        print(f" - {ruta_txt}")
+        print(f" - {ruta_csv}")
+        print(f" - {ruta_json}")
+
+    except Exception as error:
+        registrar_log(f"error al exportar archivos: {error}")
+        print(f"\nerror al exportar los archivos: {error}")
+
+def importar_archivos():
+    global REGISTROS_BIOMEDICOS
+
+    print("\nseleccione el formato del archivo a importar:")
+    print("1- TXT  (data/txt/registros_biomedicos.txt)")
+    print("2- CSV  (data/csv/registros_biomedicos.csv)")
+    print("3- JSON (data/json/registros_biomedicos.json)")
+    opcion_formato = input("Opcion (1-3): ").strip()
+    registros_leidos = []
+
+    try:
+        if opcion_formato == "1":
+            ruta = Path("data/txt/registros_biomedicos.txt")
+            with open(ruta, "r", encoding="utf-8") as f_txt:
+                for linea in f_txt:
+                    linea = linea.strip()
+                    if linea:
+                        partes = linea.split(" | ")
+                        if len(partes) == 4:
+                            reg = {
+                                "id": partes[0].strip(),
+                                "fr": partes[1].strip(),
+                                "fc": partes[2].strip(),
+                                "spo2": partes[3].strip()
+                            }
+                            registros_leidos.append(reg)
+
+        elif opcion_formato == "2":
+            ruta = Path("data/csv/registros_biomedicos.csv")
+            with open(ruta, "r", encoding="utf-8") as f_csv:
+                lector = csv.DictReader(f_csv)
+                for fila in lector:
+                    reg = {
+                        "id": fila["id"].strip(),
+                        "fr": fila["fr"].strip(),
+                        "fc": fila["fc"].strip(),
+                        "spo2": fila["spo2"].strip()
+                    }
+                    registros_leidos.append(reg)
+
+        elif opcion_formato == "3":
+            ruta = Path("data/json/registros_biomedicos.json")
+            with open(ruta, "r", encoding="utf-8") as f_json:
+                datos = json.load(f_json)
+                for item in datos:
+                    reg = {
+                        "id": str(item["id"]).strip(),
+                        "fr": str(item["fr"]).strip(),
+                        "fc": str(item["fc"]).strip(),
+                        "spo2": str(item["spo2"]).strip()
+                    }
+                    registros_leidos.append(reg)
+        else:
+            print("opcion no valida")
+            return
+
+        validos = []
+        descartados = 0
+        for reg in registros_leidos:
+            if validar_patron_registro(reg):
+                validos.append(reg)
+            else:
+                descartados += 1
+
+        REGISTROS_BIOMEDICOS = ordenar_por_fc(validos)
+        registrar_log(f"importacion desde {ruta}: {len(validos)} validos, {descartados} descartados")
+        print(f"\nimportacion completada desde {ruta}:")
+        print(f"registros validos cargados y ordenados: {len(validos)}")
+        print(f"registros descartados por formato invalido: {descartados}")
+
+    except FileNotFoundError:
+        print("\nError: el archivo aun no existe. Exporte los datos primero")
+    except KeyError as error:
+        print(f"\nError: el archivo no tiene la columna o llave esperada ({error})")
+    except json.JSONDecodeError:
+        print("\nError: el archivo JSON esta mal estructurado y no se puede leer")
+    except Exception as error:
+        print(f"\nerror al importar: {error}")
